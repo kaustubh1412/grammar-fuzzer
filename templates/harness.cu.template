@@ -1,0 +1,59 @@
+#include <stdio.h>
+#include <cuda_runtime.h>
+
+#define N 1024
+
+// CUDA Kernel with injected fuzzed SIMD instructions
+__global__ void simd_fuzz_kernel(unsigned int *data_in, unsigned int *data_out) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (tid < N) {
+<<<INJECT_PAYLOAD_HERE>>>
+    }
+}
+
+int main() {
+    unsigned int *h_in, *h_out;
+    unsigned int *d_in, *d_out;
+    size_t size = N * sizeof(unsigned int);
+
+    // Allocate Host Memory
+    h_in = (unsigned int *)malloc(size);
+    h_out = (unsigned int *)malloc(size);
+
+    // Initialize Host Data
+    for (int i = 0; i < N; i++) {
+        h_in[i] = i;
+    }
+
+    // Allocate Device Memory
+    cudaMalloc((void **)&d_in, size);
+    cudaMalloc((void **)&d_out, size);
+
+    // Copy to Device
+    cudaMemcpy(d_in, h_in, size, cudaMemcpyHostToDevice);
+
+    // Launch Fuzzed Kernel
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
+    simd_fuzz_kernel<<<blocksPerGrid, threadsPerBlock>>>(d_in, d_out);
+    
+    cudaDeviceSynchronize();
+
+    // Check for kernel execution errors
+    cudaError_t error = cudaGetLastError();
+    if(error != cudaSuccess) {
+        printf("CUDA error: %s\n", cudaGetErrorString(error));
+        return -1;
+    }
+
+    // Copy back and clean up
+    cudaMemcpy(h_out, d_out, size, cudaMemcpyDeviceToHost);
+    
+    cudaFree(d_in);
+    cudaFree(d_out);
+    free(h_in);
+    free(h_out);
+
+    return 0;
+}
